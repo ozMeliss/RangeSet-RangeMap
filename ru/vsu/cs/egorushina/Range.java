@@ -68,7 +68,6 @@ public class Range<T extends Comparable<T>> implements Iterable<T> {
 
     @Override
     public Iterator<T> iterator() {
-        // Simple implementation for Integer ranges
         if (first instanceof Integer && last instanceof Integer) {
             return (Iterator<T>) new Iterator<Integer>() {
                 int curr = (Integer) first;
