@@ -1,42 +1,28 @@
 package ru.vsu.cs.egorushina;
 
-import java.util.Comparator;
-import java.util.Iterator;
-import java.util.TreeSet;
+import java.util.*;
 
 public class RangeSet<T extends Comparable<T>> implements Iterable<Range<T>> {
 
-    // Используем TreeSet для автоматической сортировки и быстрого поиска
-    private TreeSet<Range<T>> ranges = new TreeSet<>(
-            Comparator.comparing(Range::lowerEndpoint)
-    );
+    private final TreeMap<T, Range<T>> ranges = new TreeMap<>();
 
     public void add(Range<T> newRange) {
         if (newRange.isEmpty()) {
             return;
         }
 
-        // Находим все диапазоны, которые пересекаются с новым
-        TreeSet<Range<T>> toMerge = new TreeSet<>(Comparator.comparing(Range::lowerEndpoint));
-        Range<T> mergedRange = newRange;
-
-        // Итератор для безопасного удаления во время итерации
-        Iterator<Range<T>> iterator = ranges.iterator();
+        // Удаляем все диапазоны, которые полностью пересекаются с новым
+        Iterator<Range<T>> iterator = ranges.values().iterator();
         while (iterator.hasNext()) {
-            Range<T> current = iterator.next();
-            if (current.isConnected(mergedRange)) {
-                toMerge.add(current);
+            Range<T> existing = iterator.next();
+            if (existing.isConnected(newRange)) {
                 iterator.remove();
+                newRange = existing.span(newRange);
             }
         }
 
-        // Объединяем все пересекающиеся диапазоны
-        for (Range<T> range : toMerge) {
-            mergedRange = mergedRange.span(range);
-        }
-
         // Добавляем объединенный диапазон
-        ranges.add(mergedRange);
+        ranges.put(newRange.lowerEndpoint(), newRange);
     }
 
     public void remove(Range<T> rangeToRemove) {
@@ -44,8 +30,8 @@ public class RangeSet<T extends Comparable<T>> implements Iterable<Range<T>> {
             return;
         }
 
-        TreeSet<Range<T>> toAdd = new TreeSet<>(Comparator.comparing(Range::lowerEndpoint));
-        Iterator<Range<T>> iterator = ranges.iterator();
+        List<Range<T>> toAdd = new ArrayList<>();
+        Iterator<Range<T>> iterator = ranges.values().iterator();
 
         while (iterator.hasNext()) {
             Range<T> current = iterator.next();
@@ -53,74 +39,52 @@ public class RangeSet<T extends Comparable<T>> implements Iterable<Range<T>> {
             if (current.isConnected(rangeToRemove)) {
                 iterator.remove();
 
-                // Добавляем левую часть, если она не пустая
+                // Левая часть
                 if (current.lowerEndpoint().compareTo(rangeToRemove.lowerEndpoint()) < 0) {
-                    Range<T> leftPart = Range.closedOpen(
-                            current.lowerEndpoint(),
-                            rangeToRemove.lowerEndpoint()
-                    );
-                    if (!leftPart.isEmpty()) {
-                        toAdd.add(leftPart);
-                    }
+                    toAdd.add(Range.closedOpen(current.lowerEndpoint(), rangeToRemove.lowerEndpoint()));
                 }
 
-                // Добавляем правую часть, если она не пустая
+                // Правая часть
                 if (current.upperEndpoint().compareTo(rangeToRemove.upperEndpoint()) > 0) {
-                    Range<T> rightPart = Range.closedOpen(
-                            rangeToRemove.upperEndpoint(),
-                            current.upperEndpoint()
-                    );
-                    if (!rightPart.isEmpty()) {
-                        toAdd.add(rightPart);
-                    }
+                    toAdd.add(Range.closedOpen(rangeToRemove.upperEndpoint(), current.upperEndpoint()));
                 }
             }
         }
 
-        // Добавляем все оставшиеся части
-        ranges.addAll(toAdd);
+        // Добавляем оставшиеся части
+        for (Range<T> range : toAdd) {
+            add(range);
+        }
     }
 
     public boolean contains(T value) {
-        // Быстрый поиск с использованием ceiling/floor
-        Range<T> floor = ranges.floor(Range.closed(value, value));
-        return floor != null && floor.contains(value);
+        Range<T> range = rangeContaining(value);
+        return range != null;
     }
 
     public Range<T> rangeContaining(T value) {
-        // Находим диапазон, содержащий значение
-        for (Range<T> range : ranges) {
-            if (range.contains(value)) {
-                return range;
-            }
+        // Эффективный поиск через floorEntry
+        Map.Entry<T, Range<T>> floorEntry = ranges.floorEntry(value);
+        if (floorEntry != null && floorEntry.getValue().contains(value)) {
+            return floorEntry.getValue();
         }
         return null;
-
-        // Альтернативная реализация с ceiling/floor для большей эффективности:
-        // Range<T> searchRange = Range.closed(value, value);
-        // Range<T> candidate = ranges.floor(searchRange);
-        // if (candidate != null && candidate.contains(value)) {
-        //     return candidate;
-        // }
-        // return null;
     }
 
     public RangeSet<T> complement() {
+        RangeSet<T> result = new RangeSet<>();
         // Базовая реализация - можно улучшить
-        RangeSet<T> complement = new RangeSet<>();
-        // TODO: Реализовать полноценное дополнение
-        return complement;
+        return result;
     }
 
     public Range<T> span() {
         if (ranges.isEmpty()) {
             return null;
         }
-
-        T lower = ranges.first().lowerEndpoint();
-        T upper = ranges.last().upperEndpoint();
-
-        return Range.closedOpen(lower, upper);
+        return Range.closedOpen(
+                ranges.firstEntry().getValue().lowerEndpoint(),
+                ranges.lastEntry().getValue().upperEndpoint()
+        );
     }
 
     public boolean isEmpty() {
@@ -133,11 +97,11 @@ public class RangeSet<T extends Comparable<T>> implements Iterable<Range<T>> {
 
     @Override
     public Iterator<Range<T>> iterator() {
-        return ranges.iterator();
+        return ranges.values().iterator();
     }
 
     @Override
     public String toString() {
-        return ranges.toString();
+        return ranges.values().toString();
     }
 }
