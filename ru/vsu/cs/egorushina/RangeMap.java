@@ -1,102 +1,83 @@
 package ru.vsu.cs.egorushina;
 
-import java.util.Comparator;
-import java.util.TreeSet;
+import java.util.*;
 
 public class RangeMap<K extends Comparable<K>, V> {
 
-    // TreeSet для хранения записей, отсортированных по началу диапазона
-    private TreeSet<RangeMapEntry<K, V>> entries = new TreeSet<>(
-            Comparator.comparing(entry -> entry.range.lowerEndpoint())
+    // Используем TreeMap для хранения записей, ключ - нижняя граница диапазона
+    private final TreeMap<Range<K>, V> entries = new TreeMap<>(
+            Comparator.comparing(Range::lowerEndpoint)
     );
-
-    private static class RangeMapEntry<K extends Comparable<K>, V> {
-        public Range<K> range;
-        public V value;
-
-        public RangeMapEntry(Range<K> range, V value) {
-            this.range = range;
-            this.value = value;
-        }
-
-        @Override
-        public String toString() {
-            return range + "=" + value;
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (this == obj) return true;
-            if (obj == null || getClass() != obj.getClass()) return false;
-            RangeMapEntry<?, ?> that = (RangeMapEntry<?, ?>) obj;
-            return range.equals(that.range) && value.equals(that.value);
-        }
-
-        @Override
-        public int hashCode() {
-            return java.util.Objects.hash(range, value);
-        }
-    }
 
     public void put(Range<K> range, V value) {
         if (range.isEmpty()) {
             return;
         }
 
-        TreeSet<RangeMapEntry<K, V>> newEntries = new TreeSet<>(
-                Comparator.comparing(entry -> entry.range.lowerEndpoint())
-        );
-        TreeSet<RangeMapEntry<K, V>> toRemove = new TreeSet<>(
-                Comparator.comparing(entry -> entry.range.lowerEndpoint())
-        );
+        // Находим все пересекающиеся диапазоны
+        List<Range<K>> toRemove = new ArrayList<>();
+        Map<Range<K>, V> toAdd = new HashMap<>();
 
-        // Находим все пересекающиеся записи
-        for (RangeMapEntry<K, V> entry : entries) {
-            if (entry.range.isConnected(range)) {
-                toRemove.add(entry);
+        // Итерация по всем записям для поиска пересечений
+        for (Map.Entry<Range<K>, V> entry : entries.entrySet()) {
+            Range<K> currentRange = entry.getKey();
+            V currentValue = entry.getValue();
+
+            if (currentRange.isConnected(range)) {
+                toRemove.add(currentRange);
 
                 // Сохраняем левую не пересекающуюся часть
-                if (entry.range.lowerEndpoint().compareTo(range.lowerEndpoint()) < 0) {
+                if (currentRange.lowerEndpoint().compareTo(range.lowerEndpoint()) < 0) {
                     Range<K> leftPart = Range.closedOpen(
-                            entry.range.lowerEndpoint(),
+                            currentRange.lowerEndpoint(),
                             range.lowerEndpoint()
                     );
                     if (!leftPart.isEmpty()) {
-                        newEntries.add(new RangeMapEntry<>(leftPart, entry.value));
+                        toAdd.put(leftPart, currentValue);
                     }
                 }
 
                 // Сохраняем правую не пересекающуюся часть
-                if (entry.range.upperEndpoint().compareTo(range.upperEndpoint()) > 0) {
+                if (currentRange.upperEndpoint().compareTo(range.upperEndpoint()) > 0) {
                     Range<K> rightPart = Range.closedOpen(
                             range.upperEndpoint(),
-                            entry.range.upperEndpoint()
+                            currentRange.upperEndpoint()
                     );
                     if (!rightPart.isEmpty()) {
-                        newEntries.add(new RangeMapEntry<>(rightPart, entry.value));
+                        toAdd.put(rightPart, currentValue);
                     }
                 }
-            } else {
-                newEntries.add(entry);
             }
         }
 
-        // Удаляем старые пересекающиеся записи и добавляем новые
-        entries.removeAll(toRemove);
-        entries.addAll(newEntries);
+        // Удаляем старые пересекающиеся записи
+        for (Range<K> rangeToRemove : toRemove) {
+            entries.remove(rangeToRemove);
+        }
+
+        // Добавляем новые части
+        entries.putAll(toAdd);
 
         // Добавляем новую запись
-        entries.add(new RangeMapEntry<>(range, value));
+        entries.put(range, value);
     }
 
     public V get(K key) {
-        // Быстрый поиск с использованием floor
-        RangeMapEntry<K, V> searchKey = new RangeMapEntry<>(Range.closed(key, key), null);
-        RangeMapEntry<K, V> candidate = entries.floor(searchKey);
+        // Эффективный поиск через floorEntry/ceilingEntry
+        // Создаем временный диапазон для поиска
+        Range<K> searchRange = Range.closed(key, key);
 
-        if (candidate != null && candidate.range.contains(key)) {
-            return candidate.value;
+        // Ищем ближайший диапазон, который может содержать ключ
+        Map.Entry<Range<K>, V> floorEntry = entries.floorEntry(searchRange);
+        if (floorEntry != null && floorEntry.getKey().contains(key)) {
+            return floorEntry.getValue();
         }
+
+        Map.Entry<Range<K>, V> ceilingEntry = entries.ceilingEntry(searchRange);
+        if (ceilingEntry != null && ceilingEntry.getKey().contains(key)) {
+            return ceilingEntry.getValue();
+        }
+
         return null;
     }
 
@@ -105,51 +86,49 @@ public class RangeMap<K extends Comparable<K>, V> {
             return;
         }
 
-        TreeSet<RangeMapEntry<K, V>> toAdd = new TreeSet<>(
-                Comparator.comparing(entry -> entry.range.lowerEndpoint())
-        );
-        TreeSet<RangeMapEntry<K, V>> toRemove = new TreeSet<>(
-                Comparator.comparing(entry -> entry.range.lowerEndpoint())
-        );
+        List<Range<K>> toRemove = new ArrayList<>();
+        Map<Range<K>, V> toAdd = new HashMap<>();
 
-        for (RangeMapEntry<K, V> entry : entries) {
-            if (entry.range.isConnected(range)) {
-                toRemove.add(entry);
+        for (Map.Entry<Range<K>, V> entry : entries.entrySet()) {
+            Range<K> currentRange = entry.getKey();
+            V currentValue = entry.getValue();
+
+            if (currentRange.isConnected(range)) {
+                toRemove.add(currentRange);
 
                 // Сохраняем левую часть
-                if (entry.range.lowerEndpoint().compareTo(range.lowerEndpoint()) < 0) {
+                if (currentRange.lowerEndpoint().compareTo(range.lowerEndpoint()) < 0) {
                     Range<K> leftPart = Range.closedOpen(
-                            entry.range.lowerEndpoint(),
+                            currentRange.lowerEndpoint(),
                             range.lowerEndpoint()
                     );
                     if (!leftPart.isEmpty()) {
-                        toAdd.add(new RangeMapEntry<>(leftPart, entry.value));
+                        toAdd.put(leftPart, currentValue);
                     }
                 }
 
                 // Сохраняем правую часть
-                if (entry.range.upperEndpoint().compareTo(range.upperEndpoint()) > 0) {
+                if (currentRange.upperEndpoint().compareTo(range.upperEndpoint()) > 0) {
                     Range<K> rightPart = Range.closedOpen(
                             range.upperEndpoint(),
-                            entry.range.upperEndpoint()
+                            currentRange.upperEndpoint()
                     );
                     if (!rightPart.isEmpty()) {
-                        toAdd.add(new RangeMapEntry<>(rightPart, entry.value));
+                        toAdd.put(rightPart, currentValue);
                     }
                 }
             }
         }
 
-        entries.removeAll(toRemove);
-        entries.addAll(toAdd);
+        // Удаляем и добавляем
+        for (Range<K> rangeToRemove : toRemove) {
+            entries.remove(rangeToRemove);
+        }
+        entries.putAll(toAdd);
     }
 
-    public TreeSet<Range<K>> ranges() {
-        TreeSet<Range<K>> rangeSet = new TreeSet<>(Comparator.comparing(Range::lowerEndpoint));
-        for (RangeMapEntry<K, V> entry : entries) {
-            rangeSet.add(entry.range);
-        }
-        return rangeSet;
+    public Set<Range<K>> ranges() {
+        return entries.keySet();
     }
 
     public int size() {
