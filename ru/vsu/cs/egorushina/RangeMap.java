@@ -13,11 +13,34 @@ public class RangeMap<K extends Comparable<K>, V> {
             return;
         }
 
-        // Удаляем пересекающиеся диапазоны
         List<Range<K>> toRemove = new ArrayList<>();
+        Map<Range<K>, V> toAdd = new HashMap<>();
+
         for (Range<K> existing : entries.keySet()) {
             if (existing.isConnected(range)) {
                 toRemove.add(existing);
+
+                // сохранение левой части
+                if (existing.lowerEndpoint().compareTo(range.lowerEndpoint()) < 0) {
+                    Range<K> leftPart = Range.closedOpen(
+                            existing.lowerEndpoint(),
+                            range.lowerEndpoint()
+                    );
+                    if (!leftPart.isEmpty()) {
+                        toAdd.put(leftPart, entries.get(existing));
+                    }
+                }
+
+                // правой части
+                if (existing.upperEndpoint().compareTo(range.upperEndpoint()) > 0) {
+                    Range<K> rightPart = Range.closedOpen(
+                            range.upperEndpoint(),
+                            existing.upperEndpoint()
+                    );
+                    if (!rightPart.isEmpty()) {
+                        toAdd.put(rightPart, entries.get(existing));
+                    }
+                }
             }
         }
 
@@ -25,7 +48,7 @@ public class RangeMap<K extends Comparable<K>, V> {
             entries.remove(rangeToRemove);
         }
 
-        // Добавляем новый диапазон
+        entries.putAll(toAdd);  // ✅ ДОБАВИТЬ возврат сохранённых частей!
         entries.put(range, value);
     }
 

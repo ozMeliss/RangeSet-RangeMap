@@ -69,25 +69,36 @@ public class Range<T extends Comparable<T>> implements Iterable<T> {
     @Override
     public Iterator<T> iterator() {
         if (first instanceof Integer && last instanceof Integer) {
-            return (Iterator<T>) new Iterator<Integer>() {
+            return new Iterator<T>() {
                 int curr = (Integer) first;
                 final int end = (Integer) last;
 
                 @Override
                 public boolean hasNext() {
-                    return closedLast ? curr <= end : curr < end;
+                    if (closedFirst && closedLast) return curr <= end;
+                    if (closedFirst && !closedLast) return curr < end;
+                    if (!closedFirst && closedLast) return curr < end;
+                    return curr < end - 1; // open-open
                 }
 
                 @Override
-                public Integer next() {
+                @SuppressWarnings("unchecked")
+                public T next() {
                     if (!hasNext()) throw new java.util.NoSuchElementException();
-                    return closedFirst ? curr++ : (curr++ + 1);
+
+                    int result;
+                    if (closedFirst) {
+                        result = curr++;
+                    } else {
+                        result = curr + 1;
+                        curr++;
+                    }
+                    return (T) Integer.valueOf(result);
                 }
             };
         }
         throw new UnsupportedOperationException("Iteration supported only for Integer ranges");
     }
-
     @Override
     public String toString() {
         String left = closedFirst ? "[" : "(";
