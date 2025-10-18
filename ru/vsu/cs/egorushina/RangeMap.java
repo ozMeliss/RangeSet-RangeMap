@@ -48,7 +48,7 @@ public class RangeMap<K extends Comparable<K>, V> {
             entries.remove(rangeToRemove);
         }
 
-        entries.putAll(toAdd);  // ✅ ДОБАВИТЬ возврат сохранённых частей!
+        entries.putAll(toAdd);  // возврат сохранённых частей
         entries.put(range, value);
     }
 

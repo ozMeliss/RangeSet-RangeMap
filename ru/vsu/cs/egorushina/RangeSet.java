@@ -68,10 +68,6 @@ public class RangeSet<T extends Comparable<T>> implements Iterable<Range<T>> {
         return null;
     }
 
-    public RangeSet<T> complement() {
-        RangeSet<T> result = new RangeSet<>();
-        return result;
-    }
 
     public Range<T> span() {
         if (ranges.isEmpty()) {
