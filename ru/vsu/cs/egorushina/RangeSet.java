@@ -3,15 +3,13 @@ package ru.vsu.cs.egorushina;
 import java.util.*;
 
 public class RangeSet<T extends Comparable<T>> implements Iterable<Range<T>> {
-
+    //начало диапазон
     private final TreeMap<T, Range<T>> ranges = new TreeMap<>();
 
     public void add(Range<T> newRange) {
         if (newRange.isEmpty()) {
             return;
         }
-
-        // Удаляем все диапазоны, которые полностью пересекаются с новым
         Iterator<Range<T>> iterator = ranges.values().iterator();
         while (iterator.hasNext()) {
             Range<T> existing = iterator.next();
@@ -21,7 +19,6 @@ public class RangeSet<T extends Comparable<T>> implements Iterable<Range<T>> {
             }
         }
 
-        // Добавляем объединенный диапазон
         ranges.put(newRange.lowerEndpoint(), newRange);
     }
 
@@ -63,7 +60,7 @@ public class RangeSet<T extends Comparable<T>> implements Iterable<Range<T>> {
     }
 
     public Range<T> rangeContaining(T value) {
-        // Эффективный поиск через floorEntry
+
         Map.Entry<T, Range<T>> floorEntry = ranges.floorEntry(value);
         if (floorEntry != null && floorEntry.getValue().contains(value)) {
             return floorEntry.getValue();
@@ -73,7 +70,6 @@ public class RangeSet<T extends Comparable<T>> implements Iterable<Range<T>> {
 
     public RangeSet<T> complement() {
         RangeSet<T> result = new RangeSet<>();
-        // Базовая реализация - можно улучшить
         return result;
     }
 
