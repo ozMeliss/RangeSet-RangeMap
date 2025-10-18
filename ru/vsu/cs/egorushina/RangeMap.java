@@ -1,10 +1,14 @@
 package ru.vsu.cs.egorushina;
 
-import java.util.Iterator;
+import java.util.Comparator;
+import java.util.TreeSet;
 
 public class RangeMap<K extends Comparable<K>, V> {
 
-    private SimpleLinkedList<RangeMapEntry<K, V>> entries = new SimpleLinkedList<>();
+    // TreeSet для хранения записей, отсортированных по началу диапазона
+    private TreeSet<RangeMapEntry<K, V>> entries = new TreeSet<>(
+            Comparator.comparing(entry -> entry.range.lowerEndpoint())
+    );
 
     private static class RangeMapEntry<K extends Comparable<K>, V> {
         public Range<K> range;
@@ -19,6 +23,19 @@ public class RangeMap<K extends Comparable<K>, V> {
         public String toString() {
             return range + "=" + value;
         }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) return true;
+            if (obj == null || getClass() != obj.getClass()) return false;
+            RangeMapEntry<?, ?> that = (RangeMapEntry<?, ?>) obj;
+            return range.equals(that.range) && value.equals(that.value);
+        }
+
+        @Override
+        public int hashCode() {
+            return java.util.Objects.hash(range, value);
+        }
     }
 
     public void put(Range<K> range, V value) {
@@ -26,52 +43,59 @@ public class RangeMap<K extends Comparable<K>, V> {
             return;
         }
 
-        // Remove overlapping ranges
-        SimpleLinkedList<RangeMapEntry<K, V>> result = new SimpleLinkedList<>();
+        TreeSet<RangeMapEntry<K, V>> newEntries = new TreeSet<>(
+                Comparator.comparing(entry -> entry.range.lowerEndpoint())
+        );
+        TreeSet<RangeMapEntry<K, V>> toRemove = new TreeSet<>(
+                Comparator.comparing(entry -> entry.range.lowerEndpoint())
+        );
 
-        try {
-            Iterator<RangeMapEntry<K, V>> iterator = entries.iterator();
-            while (iterator.hasNext()) {
-                RangeMapEntry<K, V> entry = iterator.next();
+        // Находим все пересекающиеся записи
+        for (RangeMapEntry<K, V> entry : entries) {
+            if (entry.range.isConnected(range)) {
+                toRemove.add(entry);
 
-                if (!entry.range.isConnected(range)) {
-                    result.addLast(entry);
-                } else {
-                    // Add non-overlapping parts of existing entry
-                    if (entry.range.lowerEndpoint().compareTo(range.lowerEndpoint()) < 0) {
-                        result.addLast(new RangeMapEntry<>(
-                                Range.closedOpen(entry.range.lowerEndpoint(), range.lowerEndpoint()),
-                                entry.value
-                        ));
-                    }
-                    if (entry.range.upperEndpoint().compareTo(range.upperEndpoint()) > 0) {
-                        result.addLast(new RangeMapEntry<>(
-                                Range.closedOpen(range.upperEndpoint(), entry.range.upperEndpoint()),
-                                entry.value
-                        ));
+                // Сохраняем левую не пересекающуюся часть
+                if (entry.range.lowerEndpoint().compareTo(range.lowerEndpoint()) < 0) {
+                    Range<K> leftPart = Range.closedOpen(
+                            entry.range.lowerEndpoint(),
+                            range.lowerEndpoint()
+                    );
+                    if (!leftPart.isEmpty()) {
+                        newEntries.add(new RangeMapEntry<>(leftPart, entry.value));
                     }
                 }
+
+                // Сохраняем правую не пересекающуюся часть
+                if (entry.range.upperEndpoint().compareTo(range.upperEndpoint()) > 0) {
+                    Range<K> rightPart = Range.closedOpen(
+                            range.upperEndpoint(),
+                            entry.range.upperEndpoint()
+                    );
+                    if (!rightPart.isEmpty()) {
+                        newEntries.add(new RangeMapEntry<>(rightPart, entry.value));
+                    }
+                }
+            } else {
+                newEntries.add(entry);
             }
-        } catch (Exception e) {
-            // Ignore for iteration
         }
 
-        // Add new entry
-        result.addLast(new RangeMapEntry<>(range, value));
-        entries = result;
+        // Удаляем старые пересекающиеся записи и добавляем новые
+        entries.removeAll(toRemove);
+        entries.addAll(newEntries);
+
+        // Добавляем новую запись
+        entries.add(new RangeMapEntry<>(range, value));
     }
 
     public V get(K key) {
-        try {
-            Iterator<RangeMapEntry<K, V>> iterator = entries.iterator();
-            while (iterator.hasNext()) {
-                RangeMapEntry<K, V> entry = iterator.next();
-                if (entry.range.contains(key)) {
-                    return entry.value;
-                }
-            }
-        } catch (Exception e) {
-            // Ignore for iteration
+        // Быстрый поиск с использованием floor
+        RangeMapEntry<K, V> searchKey = new RangeMapEntry<>(Range.closed(key, key), null);
+        RangeMapEntry<K, V> candidate = entries.floor(searchKey);
+
+        if (candidate != null && candidate.range.contains(key)) {
+            return candidate.value;
         }
         return null;
     }
@@ -81,49 +105,51 @@ public class RangeMap<K extends Comparable<K>, V> {
             return;
         }
 
-        SimpleLinkedList<RangeMapEntry<K, V>> result = new SimpleLinkedList<>();
+        TreeSet<RangeMapEntry<K, V>> toAdd = new TreeSet<>(
+                Comparator.comparing(entry -> entry.range.lowerEndpoint())
+        );
+        TreeSet<RangeMapEntry<K, V>> toRemove = new TreeSet<>(
+                Comparator.comparing(entry -> entry.range.lowerEndpoint())
+        );
 
-        try {
-            Iterator<RangeMapEntry<K, V>> iterator = entries.iterator();
-            while (iterator.hasNext()) {
-                RangeMapEntry<K, V> entry = iterator.next();
+        for (RangeMapEntry<K, V> entry : entries) {
+            if (entry.range.isConnected(range)) {
+                toRemove.add(entry);
 
-                if (!entry.range.isConnected(range)) {
-                    result.addLast(entry);
-                } else {
-                    // Keep only non-overlapping parts
-                    if (entry.range.lowerEndpoint().compareTo(range.lowerEndpoint()) < 0) {
-                        result.addLast(new RangeMapEntry<>(
-                                Range.closedOpen(entry.range.lowerEndpoint(), range.lowerEndpoint()),
-                                entry.value
-                        ));
+                // Сохраняем левую часть
+                if (entry.range.lowerEndpoint().compareTo(range.lowerEndpoint()) < 0) {
+                    Range<K> leftPart = Range.closedOpen(
+                            entry.range.lowerEndpoint(),
+                            range.lowerEndpoint()
+                    );
+                    if (!leftPart.isEmpty()) {
+                        toAdd.add(new RangeMapEntry<>(leftPart, entry.value));
                     }
-                    if (entry.range.upperEndpoint().compareTo(range.upperEndpoint()) > 0) {
-                        result.addLast(new RangeMapEntry<>(
-                                Range.closedOpen(range.upperEndpoint(), entry.range.upperEndpoint()),
-                                entry.value
-                        ));
+                }
+
+                // Сохраняем правую часть
+                if (entry.range.upperEndpoint().compareTo(range.upperEndpoint()) > 0) {
+                    Range<K> rightPart = Range.closedOpen(
+                            range.upperEndpoint(),
+                            entry.range.upperEndpoint()
+                    );
+                    if (!rightPart.isEmpty()) {
+                        toAdd.add(new RangeMapEntry<>(rightPart, entry.value));
                     }
                 }
             }
-        } catch (Exception e) {
-            // Ignore for iteration
         }
 
-        entries = result;
+        entries.removeAll(toRemove);
+        entries.addAll(toAdd);
     }
 
-    public SimpleLinkedList<Range<K>> ranges() {
-        SimpleLinkedList<Range<K>> rangeList = new SimpleLinkedList<>();
-        try {
-            Iterator<RangeMapEntry<K, V>> iterator = entries.iterator();
-            while (iterator.hasNext()) {
-                rangeList.addLast(iterator.next().range);
-            }
-        } catch (Exception e) {
-            // Ignore for iteration
+    public TreeSet<Range<K>> ranges() {
+        TreeSet<Range<K>> rangeSet = new TreeSet<>(Comparator.comparing(Range::lowerEndpoint));
+        for (RangeMapEntry<K, V> entry : entries) {
+            rangeSet.add(entry.range);
         }
-        return rangeList;
+        return rangeSet;
     }
 
     public int size() {
@@ -136,19 +162,6 @@ public class RangeMap<K extends Comparable<K>, V> {
 
     @Override
     public String toString() {
-        StringBuilder sb = new StringBuilder("{");
-        try {
-            Iterator<RangeMapEntry<K, V>> iterator = entries.iterator();
-            while (iterator.hasNext()) {
-                sb.append(iterator.next());
-                if (iterator.hasNext()) {
-                    sb.append(", ");
-                }
-            }
-        } catch (Exception e) {
-            // Ignore for iteration
-        }
-        sb.append("}");
-        return sb.toString();
+        return entries.toString();
     }
 }

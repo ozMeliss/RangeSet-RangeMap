@@ -1,108 +1,114 @@
 package ru.vsu.cs.egorushina;
 
+import java.util.Comparator;
 import java.util.Iterator;
+import java.util.TreeSet;
 
 public class RangeSet<T extends Comparable<T>> implements Iterable<Range<T>> {
 
-    private SimpleLinkedList<Range<T>> ranges = new SimpleLinkedList<>();
+    // Используем TreeSet для автоматической сортировки и быстрого поиска
+    private TreeSet<Range<T>> ranges = new TreeSet<>(
+            Comparator.comparing(Range::lowerEndpoint)
+    );
 
-    public void add(Range<T> range) {
-        if (range.isEmpty()) {
+    public void add(Range<T> newRange) {
+        if (newRange.isEmpty()) {
             return;
         }
 
-        SimpleLinkedList<Range<T>> result = new SimpleLinkedList<>();
-        boolean added = false;
+        // Находим все диапазоны, которые пересекаются с новым
+        TreeSet<Range<T>> toMerge = new TreeSet<>(Comparator.comparing(Range::lowerEndpoint));
+        Range<T> mergedRange = newRange;
 
-        try {
-            Iterator<Range<T>> iterator = ranges.iterator();
-            while (iterator.hasNext()) {
-                Range<T> current = iterator.next();
-
-                if (current.isConnected(range)) {
-                    range = range.span(current);
-                } else if (current.upperEndpoint().compareTo(range.lowerEndpoint()) < 0) {
-                    result.addLast(current);
-                } else {
-                    if (!added) {
-                        result.addLast(range);
-                        added = true;
-                    }
-                    result.addLast(current);
-                }
+        // Итератор для безопасного удаления во время итерации
+        Iterator<Range<T>> iterator = ranges.iterator();
+        while (iterator.hasNext()) {
+            Range<T> current = iterator.next();
+            if (current.isConnected(mergedRange)) {
+                toMerge.add(current);
+                iterator.remove();
             }
-        } catch (Exception e) {
         }
 
-        if (!added) {
-            result.addLast(range);
+        // Объединяем все пересекающиеся диапазоны
+        for (Range<T> range : toMerge) {
+            mergedRange = mergedRange.span(range);
         }
 
-        ranges = result;
+        // Добавляем объединенный диапазон
+        ranges.add(mergedRange);
     }
 
-    public void remove(Range<T> range) {
-        if (range.isEmpty()) {
+    public void remove(Range<T> rangeToRemove) {
+        if (rangeToRemove.isEmpty()) {
             return;
         }
 
-        SimpleLinkedList<Range<T>> result = new SimpleLinkedList<>();
+        TreeSet<Range<T>> toAdd = new TreeSet<>(Comparator.comparing(Range::lowerEndpoint));
+        Iterator<Range<T>> iterator = ranges.iterator();
 
-        try {
-            Iterator<Range<T>> iterator = ranges.iterator();
-            while (iterator.hasNext()) {
-                Range<T> current = iterator.next();
+        while (iterator.hasNext()) {
+            Range<T> current = iterator.next();
 
-                if (!current.isConnected(range)) {
-                    result.addLast(current);
-                } else {
-                    if (current.lowerEndpoint().compareTo(range.lowerEndpoint()) < 0) {
-                        result.addLast(Range.closedOpen(current.lowerEndpoint(), range.lowerEndpoint()));
+            if (current.isConnected(rangeToRemove)) {
+                iterator.remove();
+
+                // Добавляем левую часть, если она не пустая
+                if (current.lowerEndpoint().compareTo(rangeToRemove.lowerEndpoint()) < 0) {
+                    Range<T> leftPart = Range.closedOpen(
+                            current.lowerEndpoint(),
+                            rangeToRemove.lowerEndpoint()
+                    );
+                    if (!leftPart.isEmpty()) {
+                        toAdd.add(leftPart);
                     }
-                    if (current.upperEndpoint().compareTo(range.upperEndpoint()) > 0) {
-                        result.addLast(Range.closedOpen(range.upperEndpoint(), current.upperEndpoint()));
+                }
+
+                // Добавляем правую часть, если она не пустая
+                if (current.upperEndpoint().compareTo(rangeToRemove.upperEndpoint()) > 0) {
+                    Range<T> rightPart = Range.closedOpen(
+                            rangeToRemove.upperEndpoint(),
+                            current.upperEndpoint()
+                    );
+                    if (!rightPart.isEmpty()) {
+                        toAdd.add(rightPart);
                     }
                 }
             }
-        } catch (Exception e) {
-            // Ignore for iteration
         }
 
-        ranges = result;
+        // Добавляем все оставшиеся части
+        ranges.addAll(toAdd);
     }
 
     public boolean contains(T value) {
-        try {
-            Iterator<Range<T>> iterator = ranges.iterator();
-            while (iterator.hasNext()) {
-                Range<T> range = iterator.next();
-                if (range.contains(value)) {
-                    return true;
-                }
-            }
-        } catch (Exception e) {
-            // Ignore for iteration
-        }
-        return false;
+        // Быстрый поиск с использованием ceiling/floor
+        Range<T> floor = ranges.floor(Range.closed(value, value));
+        return floor != null && floor.contains(value);
     }
 
     public Range<T> rangeContaining(T value) {
-        try {
-            Iterator<Range<T>> iterator = ranges.iterator();
-            while (iterator.hasNext()) {
-                Range<T> range = iterator.next();
-                if (range.contains(value)) {
-                    return range;
-                }
+        // Находим диапазон, содержащий значение
+        for (Range<T> range : ranges) {
+            if (range.contains(value)) {
+                return range;
             }
-        } catch (Exception e) {
-            // Ignore for iteration
         }
         return null;
+
+        // Альтернативная реализация с ceiling/floor для большей эффективности:
+        // Range<T> searchRange = Range.closed(value, value);
+        // Range<T> candidate = ranges.floor(searchRange);
+        // if (candidate != null && candidate.contains(value)) {
+        //     return candidate;
+        // }
+        // return null;
     }
 
     public RangeSet<T> complement() {
+        // Базовая реализация - можно улучшить
         RangeSet<T> complement = new RangeSet<>();
+        // TODO: Реализовать полноценное дополнение
         return complement;
     }
 
@@ -111,24 +117,10 @@ public class RangeSet<T extends Comparable<T>> implements Iterable<Range<T>> {
             return null;
         }
 
-        try {
-            T lower = ranges.get(0).lowerEndpoint();
-            T upper = ranges.get(0).upperEndpoint();
+        T lower = ranges.first().lowerEndpoint();
+        T upper = ranges.last().upperEndpoint();
 
-            for (int i = 1; i < ranges.size(); i++) {
-                Range<T> current = ranges.get(i);
-                if (current.lowerEndpoint().compareTo(lower) < 0) {
-                    lower = current.lowerEndpoint();
-                }
-                if (current.upperEndpoint().compareTo(upper) > 0) {
-                    upper = current.upperEndpoint();
-                }
-            }
-
-            return Range.closedOpen(lower, upper);
-        } catch (Exception e) {
-            return null;
-        }
+        return Range.closedOpen(lower, upper);
     }
 
     public boolean isEmpty() {
@@ -146,19 +138,6 @@ public class RangeSet<T extends Comparable<T>> implements Iterable<Range<T>> {
 
     @Override
     public String toString() {
-        StringBuilder sb = new StringBuilder("[");
-        try {
-            Iterator<Range<T>> iterator = ranges.iterator();
-            while (iterator.hasNext()) {
-                sb.append(iterator.next());
-                if (iterator.hasNext()) {
-                    sb.append(", ");
-                }
-            }
-        } catch (Exception e) {
-            // Ignore for iteration
-        }
-        sb.append("]");
-        return sb.toString();
+        return ranges.toString();
     }
 }
